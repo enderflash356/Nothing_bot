@@ -16,9 +16,7 @@ def run_flask():
     port = int(os.getenv("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-
 threading.Thread(target=run_flask, daemon=True).start()
-
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -26,7 +24,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID", "971764701014949908"))
 
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
@@ -51,14 +48,16 @@ historial_usuarios = {}
 async def on_ready():
     print(f'🤖 ¡Bot sarcástico activo 24/7 en Render como: {bot.user}!')
     try:
-        guild_obj = discord.Object(id=GUILD_ID)
-        bot.tree.copy_global_to(guild=guild_obj)
-        synced = await bot.tree.sync(guild=guild_obj)
-        print(f"✅ Se sincronizaron {len(synced)} comandos Slash.")
+        
+        synced = await bot.tree.sync()
+        print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.")
     except Exception as e:
         print(f"Aviso en sincronización: {e}")
 
+
 @bot.tree.command(name="olvidame", description="Borra la memoria que el bot tiene sobre ti")
+@discord.app_commands.allowed_installs(guilds=True, users=True)
+@discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 async def olvidame(interaction: discord.Interaction):
     user_id = interaction.user.id
     if user_id in historial_usuarios:
