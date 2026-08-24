@@ -128,11 +128,11 @@ async def on_message(message: discord.Message):
             try:
                 
                 response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=mensajes_api,
-                    max_tokens=150,
-                    temperature=0.85
-                )
+    model="qwen/qwen3.6-27b",
+    messages=mensajes_api,
+    max_tokens=150,
+    temperature=0.85
+)
 
                 respuesta = response.choices[0].message.content or "Aja."
 
