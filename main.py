@@ -147,7 +147,7 @@ async def on_message(message: discord.Message):
                     await message.reply(respuesta, mention_author=False)
 
             except Exception as e:
-                print(f"Error en consola: {e}")
+                print(f"❌ ERROR EN LA API DE GROQ: {type(e).__name__} - {e}")
                 await message.reply("Se me chispoteó el sistema.", mention_author=False)
 
     await bot.process_commands(message)
