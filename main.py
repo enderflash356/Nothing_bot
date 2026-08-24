@@ -3,9 +3,11 @@ import threading
 from flask import Flask
 import discord
 from discord.ext import commands
+from groq import Groq
+import google.generativeai as genai
 from openai import OpenAI
 
-# Importamos las funciones del módulo externo
+
 from funciones_bot import registrar_funciones, evaluar_interrupcion_random
 
 app = Flask(__name__)
@@ -24,15 +26,20 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Registramos los comandos del archivo externo
+
 registrar_funciones(bot)
 
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=GROQ_API_KEY
+client_groq = Groq(api_key=GROQ_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+client_openrouter = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
 )
 
 PERSONALIDAD_BOT = (
@@ -64,6 +71,55 @@ PERSONALIDAD_BOT = (
 
 historial_usuarios = {}
 
+
+async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
+
+    
+    try:
+        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+        response = client_groq.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=payload,
+            max_tokens=150,
+            temperature=0.7,
+            frequency_penalty=0.6,
+            presence_penalty=0.4
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
+
+    
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=instruccion_dinamica
+        )
+        prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+        response = model.generate_content(
+            prompt_texto,
+            generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
+        )
+        return response.text
+    except Exception as e:
+        print(f"⚠️ Gemini falló ({e}). Pasando a OpenRouter...", flush=True)
+
+    
+    try:
+        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+        response = client_openrouter.chat.completions.create(
+            model="meta-llama/llama-3.1-8b-instruct:free",
+            messages=payload,
+            max_tokens=150,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"❌ Las 3 APIs fallaron ({e}).", flush=True)
+
+    return "ando mzt, me hablas al rato..."
+
+
 @bot.event
 async def on_ready():
     print(f'🤖 ¡Bot activo en Render como: {bot.user}!', flush=True)
@@ -91,7 +147,6 @@ async def on_message(message: discord.Message):
 
     mencionado = bot.user in message.mentions
     
-    # Verificación segura de respuestas en servidores y DMs
     respondido = False
     if message.reference:
         if message.reference.cached_message:
@@ -103,10 +158,7 @@ async def on_message(message: discord.Message):
             except Exception:
                 respondido = False
 
-    # Opción 3: Interrupción aleatoria del 1%
     interrupcion_random = evaluar_interrupcion_random()
-
-    # Responder si lo mencionan, le responden o si salta la probabilidad aleatoria (o si es DM)
     es_dm = message.guild is None
     
     if mencionado or respondido or interrupcion_random or es_dm:
@@ -118,7 +170,6 @@ async def on_message(message: discord.Message):
             emojis_disponibles = ""
             stickers_disponibles = ""
             
-            # Solo buscar emojis/stickers si el mensaje ocurre dentro de un servidor
             if message.guild:
                 lista_emojis = [f"<:{e.name}:{e.id}>" for e in message.guild.emojis if not e.animated]
                 if lista_emojis:
@@ -146,43 +197,28 @@ async def on_message(message: discord.Message):
                 "content": f"[{nombre_usuario}]: {texto_limpio}"
             })
 
-            mensajes_api = [{"role": "system", "content": instruccion_dinamica}] + historial_usuarios[user_id][-10:]
+            
+            respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            try:
-                response = client.chat.completions.create(
-                    model="groq/compound-mini",
-                    messages=mensajes_api,
-                    max_tokens=150,
-                    temperature=0.7,           
-                    frequency_penalty=0.6,
-                    presence_penalty=0.4
-                )
+            sticker_a_enviar = None
+            if "[STICKER:" in respuesta:
+                inicio = respuesta.find("[STICKER:") + 9
+                fin = respuesta.find("]", inicio)
+                nombre_sticker = respuesta[inicio:fin]
+                respuesta = respuesta.replace(f"[STICKER:{nombre_sticker}]", "").strip()
+                
+                if message.guild:
+                    sticker_a_enviar = discord.utils.get(message.guild.stickers, name=nombre_sticker)
 
-                respuesta = response.choices[0].message.content or "Aja."
+            historial_usuarios[user_id].append({
+                "role": "assistant",
+                "content": respuesta
+            })
 
-                sticker_a_enviar = None
-                if "[STICKER:" in respuesta:
-                    inicio = respuesta.find("[STICKER:") + 9
-                    fin = respuesta.find("]", inicio)
-                    nombre_sticker = respuesta[inicio:fin]
-                    respuesta = respuesta.replace(f"[STICKER:{nombre_sticker}]", "").strip()
-                    
-                    if message.guild:
-                        sticker_a_enviar = discord.utils.get(message.guild.stickers, name=nombre_sticker)
-
-                historial_usuarios[user_id].append({
-                    "role": "assistant",
-                    "content": respuesta
-                })
-
-                if sticker_a_enviar:
-                    await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
-                else:
-                    await message.reply(respuesta, mention_author=False)
-
-            except Exception as e:
-                print(f"❌ ERROR EN GROQ: {type(e).__name__} - {e}", flush=True)
-                await message.reply("Se me chispoteó el sistema.", mention_author=False)
+            if sticker_a_enviar:
+                await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
+            else:
+                await message.reply(respuesta, mention_author=False)
 
     await bot.process_commands(message)
 
