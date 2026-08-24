@@ -1,10 +1,12 @@
-import re
 import os
 import threading
 from flask import Flask
 import discord
 from discord.ext import commands
 from openai import OpenAI
+
+# Importamos las funciones del módulo externo
+from funciones_bot import registrar_funciones, evaluar_interrupcion_random
 
 app = Flask(__name__)
 
@@ -21,6 +23,9 @@ threading.Thread(target=run_flask, daemon=True).start()
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Registramos los comandos del archivo externo
+registrar_funciones(bot)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -40,7 +45,6 @@ PERSONALIDAD_BOT = (
     "4. Mantén la actitud de alguien a quien le da un poco de flojera responder pero igual lo hace.\n"
     "5. Puedes hacer bromas pesadas y de todo tipo, pero tampoco insultar a un nivel tan personal.\n"
     "6. Te crees un pan y eres muy papeador."
-    "7. NUNCA uses bloques de pensamiento, no razones en voz alta ni escribas <think>. Responde DIRECTAMENTE la frase final."
 )
 
 historial_usuarios = {}
@@ -48,18 +52,6 @@ historial_usuarios = {}
 @bot.event
 async def on_ready():
     print(f'🤖 ¡Bot activo en Render como: {bot.user}!', flush=True)
-    
-    
-    try:
-        modelos = client.models.list()
-        nombres_modelos = [m.id for m in modelos.data]
-        print("📋 MODELOS DISPONIBLES EN TU CUENTA DE GROQ:", flush=True)
-        for m in nombres_modelos:
-            print(f"  - {m}", flush=True)
-    except Exception as e:
-        print(f"❌ No se pudieron obtener los modelos de Groq: {e}", flush=True)
-    
-
     try:
         synced = await bot.tree.sync()
         print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.", flush=True)
@@ -83,13 +75,26 @@ async def on_message(message: discord.Message):
         return
 
     mencionado = bot.user in message.mentions
-    respondido = (
-        message.reference and 
-        message.reference.cached_message and 
-        message.reference.cached_message.author == bot.user
-    )
+    
+    # Verificación segura de respuestas en servidores y DMs
+    respondido = False
+    if message.reference:
+        if message.reference.cached_message:
+            respondido = (message.reference.cached_message.author == bot.user)
+        else:
+            try:
+                msg_ref = await message.channel.fetch_message(message.reference.message_id)
+                respondido = (msg_ref.author == bot.user)
+            except Exception:
+                respondido = False
 
-    if mencionado or respondido:
+    # Opción 3: Interrupción aleatoria del 1%
+    interrupcion_random = evaluar_interrupcion_random()
+
+    # Responder si lo mencionan, le responden o si salta la probabilidad aleatoria (o si es DM)
+    es_dm = message.guild is None
+    
+    if mencionado or respondido or interrupcion_random or es_dm:
         async with message.channel.typing():
             user_id = message.author.id
             nombre_usuario = message.author.display_name
@@ -98,6 +103,7 @@ async def on_message(message: discord.Message):
             emojis_disponibles = ""
             stickers_disponibles = ""
             
+            # Solo buscar emojis/stickers si el mensaje ocurre dentro de un servidor
             if message.guild:
                 lista_emojis = [f"<:{e.name}:{e.id}>" for e in message.guild.emojis if not e.animated]
                 if lista_emojis:
@@ -136,7 +142,6 @@ async def on_message(message: discord.Message):
                 )
 
                 respuesta = response.choices[0].message.content or "Aja."
-                
 
                 sticker_a_enviar = None
                 if "[STICKER:" in respuesta:
