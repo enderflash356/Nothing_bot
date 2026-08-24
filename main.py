@@ -74,13 +74,17 @@ historial_usuarios = {}
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     
-    
-    modelos_groq = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
-    for mod in modelos_groq:
-        try:
+    # 1. INTENTO CON GROQ (Auto-detecta desde la API)
+    try:
+        modelos_groq = [m.id for m in client_groq.models.list().data]
+        # Preferimos modelos rápidos o potentes disponibles
+        modelo_groq = next((m for m in modelos_groq if "llama" in m or "qwen" in m or "gpt" in m), modelos_groq[0] if modelos_groq else None)
+        
+        if modelo_groq:
+            print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
             payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
             response = client_groq.chat.completions.create(
-                model=mod,
+                model=modelo_groq,
                 messages=payload,
                 max_tokens=150,
                 temperature=0.7,
@@ -88,31 +92,25 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 presence_penalty=0.4
             )
             return response.choices[0].message.content
-        except Exception as e:
-            print(f"⚠️ Groq ({mod}) falló o no existe. Probando siguiente...", flush=True)
+    except Exception as e:
+        print(f"⚠️ Groq falló en auto-detección ({e}). Pasando a Gemini...", flush=True)
 
-    
+    # 2. INTENTO CON GEMINI (Auto-detecta limpiando prefijo 'models/')
     try:
+        modelos_gemini = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                # Quitamos el 'models/' inicial para evitar error de sintaxis en el cliente
+                nombre_limpio = m.name.replace("models/", "")
+                modelos_gemini.append(nombre_limpio)
         
-        modelos_disponibles = [
-            m.name for m in genai.list_models() 
-            if 'generateContent' in m.supported_generation_methods
-        ]
-        
-        
-        modelo_elegido = None
-        for m in modelos_disponibles:
-            if "flash" in m:
-                modelo_elegido = m
-                break
-        
-        if not modelo_elegido and modelos_disponibles:
-            modelo_elegido = modelos_disponibles[0]
+        # Filtramos preferentemente los flash (como gemini-3.6-flash / gemini-3.5-flash-lite)
+        modelo_gemini = next((m for m in modelos_gemini if "flash" in m), modelos_gemini[0] if modelos_gemini else None)
 
-        if modelo_elegido:
-            print(f"🧠 Usando modelo Gemini detectado: {modelo_elegido}", flush=True)
+        if modelo_gemini:
+            print(f"🧠 Usando modelo Gemini detectado: {modelo_gemini}", flush=True)
             model = genai.GenerativeModel(
-                model_name=modelo_elegido,
+                model_name=modelo_gemini,
                 system_instruction=instruccion_dinamica
             )
             prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
@@ -124,34 +122,27 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     except Exception as e:
         print(f"⚠️ Gemini falló en auto-detección ({e}). Pasando a OpenRouter...", flush=True)
 
-    
-    try:
-        
-        modelos_openrouter = [
-            "openrouter/auto",
-            "google/gemma-2-9b-it:free",
-            "meta-llama/llama-3.2-11b-vision-instruct:free",
-            "qwen/qwen-2.5-7b-instruct:free"
-        ]
-        
-        for mod in modelos_openrouter:
-            try:
-                payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-                response = client_openrouter.chat.completions.create(
-                    model=mod,
-                    messages=payload,
-                    max_tokens=150,
-                    temperature=0.7
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente modelo gratis...", flush=True)
-    except Exception as e:
-        print(f"❌ Error general en OpenRouter: {e}", flush=True)
+    # 3. INTENTO CON OPENROUTER (Filtra modelos gratis activos)
+    modelos_openrouter = [
+        "google/gemma-2-9b-it:free",
+        "qwen/qwen-2.5-7b-instruct:free",
+        "openrouter/auto"
+    ]
+    for mod in modelos_openrouter:
+        try:
+            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+            response = client_openrouter.chat.completions.create(
+                model=mod,
+                messages=payload,
+                max_tokens=150,
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente...", flush=True)
 
-    
+    # Si todo falla
     return "ando mzt, me hablas al rato..."
-
 
 @bot.event
 async def on_ready():
