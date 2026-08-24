@@ -1,12 +1,28 @@
 import os
+import threading
+from flask import Flask
 import discord
 from discord.ext import commands
 from openai import OpenAI
 
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "¡El bot de Discord está vivo 24/7!"
+
+def run_flask():
+    port = int(os.getenv("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -33,7 +49,7 @@ historial_usuarios = {}
 
 @bot.event
 async def on_ready():
-    print(f'🤖 ¡Bot sarcástico activo 24/7 en la nube como: {bot.user}!')
+    print(f'🤖 ¡Bot sarcástico activo 24/7 en Render como: {bot.user}!')
     try:
         guild_obj = discord.Object(id=GUILD_ID)
         bot.tree.copy_global_to(guild=guild_obj)
