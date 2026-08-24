@@ -46,6 +46,18 @@ historial_usuarios = {}
 @bot.event
 async def on_ready():
     print(f'🤖 ¡Bot activo en Render como: {bot.user}!', flush=True)
+    
+    
+    try:
+        modelos = client.models.list()
+        nombres_modelos = [m.id for m in modelos.data]
+        print("📋 MODELOS DISPONIBLES EN TU CUENTA DE GROQ:", flush=True)
+        for m in nombres_modelos:
+            print(f"  - {m}", flush=True)
+    except Exception as e:
+        print(f"❌ No se pudieron obtener los modelos de Groq: {e}", flush=True)
+    
+
     try:
         synced = await bot.tree.sync()
         print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.", flush=True)
@@ -114,6 +126,7 @@ async def on_message(message: discord.Message):
             mensajes_api = [{"role": "system", "content": instruccion_dinamica}] + historial_usuarios[user_id][-10:]
 
             try:
+                
                 response = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=mensajes_api,
