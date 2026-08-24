@@ -136,6 +136,14 @@ async def on_message(message: discord.Message):
 
                 respuesta = response.choices[0].message.content or "Aja."
 
+                
+                if "<think>" in respuesta and "</think>" in respuesta:
+                    fin_think = respuesta.find("</think>") + 8
+                    respuesta = respuesta[fin_think:].strip()
+                elif "</think>" in respuesta:
+                    respuesta = respuesta.split("</think>")[-1].strip()
+                
+
                 sticker_a_enviar = None
                 if "[STICKER:" in respuesta:
                     inicio = respuesta.find("[STICKER:") + 9
