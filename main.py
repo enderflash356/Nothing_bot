@@ -74,43 +74,40 @@ historial_usuarios = {}
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     
-    # 1. INTENTO CON GROQ (Auto-detecta desde la API)
+    # 1. INTENTO CON GROQ (Filtrando solo modelos de chat válidos)
     try:
         modelos_groq = [m.id for m in client_groq.models.list().data]
-        # Preferimos modelos rápidos o potentes disponibles
-        modelo_groq = next((m for m in modelos_groq if "llama" in m or "qwen" in m or "gpt" in m), modelos_groq[0] if modelos_groq else None)
+        # Excluimos herramientas especiales (como prompt-guard o whisper)
+        modelos_chat = [
+            m for m in modelos_groq 
+            if not any(x in m for x in ["prompt-guard", "whisper", "guard"])
+        ]
         
-        if modelo_groq:
-            print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
-            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-            response = client_groq.chat.completions.create(
-                model=modelo_groq,
-                messages=payload,
-                max_tokens=150,
-                temperature=0.7,
-                frequency_penalty=0.6,
-                presence_penalty=0.4
-            )
-            return response.choices[0].message.content
+        # Seleccionamos el primer modelo de chat disponible
+        modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
+        
+        print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
+        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+        response = client_groq.chat.completions.create(
+            model=modelo_groq,
+            messages=payload,
+            max_tokens=150,
+            temperature=0.7,
+            frequency_penalty=0.6,
+            presence_penalty=0.4
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        print(f"⚠️ Groq falló en auto-detección ({e}). Pasando a Gemini...", flush=True)
+        print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
 
-    # 2. INTENTO CON GEMINI (Auto-detecta limpiando prefijo 'models/')
-    try:
-        modelos_gemini = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                # Quitamos el 'models/' inicial para evitar error de sintaxis en el cliente
-                nombre_limpio = m.name.replace("models/", "")
-                modelos_gemini.append(nombre_limpio)
-        
-        # Filtramos preferentemente los flash (como gemini-3.6-flash / gemini-3.5-flash-lite)
-        modelo_gemini = next((m for m in modelos_gemini if "flash" in m), modelos_gemini[0] if modelos_gemini else None)
-
-        if modelo_gemini:
-            print(f"🧠 Usando modelo Gemini detectado: {modelo_gemini}", flush=True)
+    # 2. INTENTO CON GEMINI (Probando modelos oficiales estándar)
+    # Usamos una lista de modelos vigentes en orden de preferencia
+    modelos_gemini = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    for mod in modelos_gemini:
+        try:
+            print(f"🧠 Probando Gemini: {mod}", flush=True)
             model = genai.GenerativeModel(
-                model_name=modelo_gemini,
+                model_name=mod,
                 system_instruction=instruccion_dinamica
             )
             prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
@@ -119,8 +116,8 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
             )
             return response.text
-    except Exception as e:
-        print(f"⚠️ Gemini falló en auto-detección ({e}). Pasando a OpenRouter...", flush=True)
+        except Exception as e:
+            print(f"⚠️ Gemini ({mod}) no disponible. Probando siguiente...", flush=True)
 
     # 3. INTENTO CON OPENROUTER (Filtra modelos gratis activos)
     modelos_openrouter = [
