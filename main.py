@@ -73,50 +73,83 @@ historial_usuarios = {}
 
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
+    
+    
+    modelos_groq = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    for mod in modelos_groq:
+        try:
+            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+            response = client_groq.chat.completions.create(
+                model=mod,
+                messages=payload,
+                max_tokens=150,
+                temperature=0.7,
+                frequency_penalty=0.6,
+                presence_penalty=0.4
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"⚠️ Groq ({mod}) falló o no existe. Probando siguiente...", flush=True)
 
     
     try:
-        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-        response = client_groq.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=payload,
-            max_tokens=150,
-            temperature=0.7,
-            frequency_penalty=0.6,
-            presence_penalty=0.4
-        )
-        return response.choices[0].message.content
+        
+        modelos_disponibles = [
+            m.name for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        
+        
+        modelo_elegido = None
+        for m in modelos_disponibles:
+            if "flash" in m:
+                modelo_elegido = m
+                break
+        
+        if not modelo_elegido and modelos_disponibles:
+            modelo_elegido = modelos_disponibles[0]
+
+        if modelo_elegido:
+            print(f"🧠 Usando modelo Gemini detectado: {modelo_elegido}", flush=True)
+            model = genai.GenerativeModel(
+                model_name=modelo_elegido,
+                system_instruction=instruccion_dinamica
+            )
+            prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+            response = model.generate_content(
+                prompt_texto,
+                generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
+            )
+            return response.text
     except Exception as e:
-        print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
+        print(f"⚠️ Gemini falló en auto-detección ({e}). Pasando a OpenRouter...", flush=True)
 
     
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=instruccion_dinamica
-        )
-        prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-        response = model.generate_content(
-            prompt_texto,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
-        )
-        return response.text
+        
+        modelos_openrouter = [
+            "openrouter/auto",
+            "google/gemma-2-9b-it:free",
+            "meta-llama/llama-3.2-11b-vision-instruct:free",
+            "qwen/qwen-2.5-7b-instruct:free"
+        ]
+        
+        for mod in modelos_openrouter:
+            try:
+                payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+                response = client_openrouter.chat.completions.create(
+                    model=mod,
+                    messages=payload,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente modelo gratis...", flush=True)
     except Exception as e:
-        print(f"⚠️ Gemini falló ({e}). Pasando a OpenRouter...", flush=True)
+        print(f"❌ Error general en OpenRouter: {e}", flush=True)
 
     
-    try:
-        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-        response = client_openrouter.chat.completions.create(
-            model="meta-llama/llama-3.1-8b-instruct:free",
-            messages=payload,
-            max_tokens=150,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"❌ Las 3 APIs fallaron ({e}).", flush=True)
-
     return "ando mzt, me hablas al rato..."
 
 
