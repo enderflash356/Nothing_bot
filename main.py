@@ -129,27 +129,13 @@ async def on_message(message: discord.Message):
 
             try:
                 response = client.chat.completions.create(
-                    model="qwen/qwen3.6-27b",
+                    model="groq/compound-mini",
                     messages=mensajes_api,
-                    max_tokens=250, 
+                    max_tokens=150,
                     temperature=0.85
                 )
 
                 respuesta = response.choices[0].message.content or "Aja."
-
-                
-                if "</think>" in respuesta:
-                    respuesta = respuesta.split("</think>")[-1].strip()
-                
-                elif "<think>" in respuesta:
-                    respuesta = re.sub(r'^<think>.*', '', respuesta, flags=re.DOTALL).strip()
-                
-                
-                respuesta = re.sub(r'</?think>', '', respuesta).strip()
-
-                
-                if not respuesta:
-                    respuesta = "Aja, ¿qué pasó?"
                 
 
                 sticker_a_enviar = None
