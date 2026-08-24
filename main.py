@@ -1,3 +1,4 @@
+import re
 import os
 import threading
 from flask import Flask
@@ -126,24 +127,23 @@ async def on_message(message: discord.Message):
             mensajes_api = [{"role": "system", "content": instruccion_dinamica}] + historial_usuarios[user_id][-10:]
 
             try:
-                
                 response = client.chat.completions.create(
-    model="qwen/qwen3.6-27b",
-    messages=mensajes_api,
-    max_tokens=150,
-    temperature=0.85
-)
+                    model="qwen/qwen3.6-27b",
+                    messages=mensajes_api,
+                    max_tokens=150,
+                    temperature=0.85
+                )
 
                 respuesta = response.choices[0].message.content or "Aja."
 
                 
-                if "<think>" in respuesta and "</think>" in respuesta:
-                    fin_think = respuesta.find("</think>") + 8
-                    respuesta = respuesta[fin_think:].strip()
-                elif "</think>" in respuesta:
-                    respuesta = respuesta.split("</think>")[-1].strip()
+                respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
                 
-
+                respuesta = re.sub(r'</?think>', '', respuesta).strip()
+                
+                if not respuesta:
+                    respuesta = "Aja."
+                
                 sticker_a_enviar = None
                 if "[STICKER:" in respuesta:
                     inicio = respuesta.find("[STICKER:") + 9
