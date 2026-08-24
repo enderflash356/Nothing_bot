@@ -6,6 +6,7 @@ from discord.ext import commands
 from groq import Groq
 import google.generativeai as genai
 from openai import OpenAI
+import re
 
 
 from funciones_bot import registrar_funciones, evaluar_interrupcion_random
@@ -219,7 +220,12 @@ async def on_message(message: discord.Message):
             })
 
             
+           
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
+
+            
+            respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL).strip()
+            respuesta = re.sub(r'(<:[a-zA-Z0-9_]+:\d+)(?!>)', r'\1>', respuesta)
 
             sticker_a_enviar = None
             if "[STICKER:" in respuesta:
