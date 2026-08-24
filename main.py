@@ -5,7 +5,6 @@ import discord
 from discord.ext import commands
 from openai import OpenAI
 
-
 app = Flask(__name__)
 
 @app.route('/')
@@ -46,14 +45,12 @@ historial_usuarios = {}
 
 @bot.event
 async def on_ready():
-    print(f'🤖 ¡Bot sarcástico activo 24/7 en Render como: {bot.user}!')
+    print(f'🤖 ¡Bot activo en Render como: {bot.user}!', flush=True)
     try:
-        
         synced = await bot.tree.sync()
-        print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.")
+        print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.", flush=True)
     except Exception as e:
-        print(f"Aviso en sincronización: {e}")
-
+        print(f"❌ Error en sincronización: {e}", flush=True)
 
 @bot.tree.command(name="olvidame", description="Borra la memoria que el bot tiene sobre ti")
 @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -118,7 +115,7 @@ async def on_message(message: discord.Message):
 
             try:
                 response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-80b-instant",
                     messages=mensajes_api,
                     max_tokens=150,
                     temperature=0.85
@@ -147,7 +144,7 @@ async def on_message(message: discord.Message):
                     await message.reply(respuesta, mention_author=False)
 
             except Exception as e:
-                print(f"❌ ERROR EN LA API DE GROQ: {type(e).__name__} - {e}")
+                print(f"❌ ERROR EN GROQ: {type(e).__name__} - {e}", flush=True)
                 await message.reply("Se me chispoteó el sistema.", mention_author=False)
 
     await bot.process_commands(message)
