@@ -132,24 +132,32 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
             except Exception as e:
                 print(f"⚠️ Cerebras ({mod}) falló...", flush=True)
 
-    # 2. GEMINI
     if GEMINI_API_KEY:
         for mod in ["gemini-2.5-flash", "gemini-2.5-pro"]:
             try:
                 print(f"🧠 Probando Gemini: {mod}", flush=True)
-                model = genai.GenerativeModel(model_name=mod, system_instruction=instruccion_dinamica)
                 
+                # Pasar la instrucción como system_instruction estricto
+                model = genai.GenerativeModel(
+                    model_name=mod,
+                    system_instruction=instruccion_dinamica
+                )
+                
+                # Construir historial para Gemini
                 historial_gemini = []
-                for m in mensajes_historial:
+                for m in mensajes_historial[:-1]:
                     role_gemini = "user" if m["role"] == "user" else "model"
                     historial_gemini.append({"role": role_gemini, "parts": [m["content"]]})
                 
-                chat = model.start_chat(history=historial_gemini[:-1] if len(historial_gemini) > 1 else [])
-                ultimo_msg = historial_gemini[-1]["parts"][0] if historial_gemini else "hola"
+                chat = model.start_chat(history=historial_gemini)
+                ultimo_msg = mensajes_historial[-1]["content"] if mensajes_historial else "hola"
                 
                 response = chat.send_message(
                     ultimo_msg,
-                    generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=150,
+                        temperature=0.9  # Subimos ligeramente la temperatura para más variedad y soltura
+                    )
                 )
                 if response.text:
                     return response.text
