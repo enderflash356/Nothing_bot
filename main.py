@@ -75,7 +75,6 @@ PERSONALIDAD_BOT = (
 
 historial_usuarios = {}
 
-# FUNCIÓN PARA REVISAR LOS MODELOS DE IA DISPONIBLES EN CONSOLA
 def mostrar_modelos_disponibles():
     print("==================================================", flush=True)
     print("🔍 REVISANDO MODELOS DE IA DISPONIBLES EN TUS APIS...", flush=True)
@@ -93,10 +92,25 @@ def mostrar_modelos_disponibles():
         try:
             print("--- Groq ---", flush=True)
             modelos_groq = client_groq.models.list().data
-            for m in modelos_groq[:5]: # Mostramos los primeros 5
+            for m in modelos_groq[:5]:
                 print(f"  • {m.id}", flush=True)
         except Exception as e:
             print(f"  ❌ Error listando Groq: {e}", flush=True)
+
+    if client_cerebras:
+        print("--- Cerebras ---", flush=True)
+        print("  • llama3.1-70b\n  • llama3.1-8b", flush=True)
+
+    if client_cohere:
+        print("--- Cohere ---", flush=True)
+        print("  • command-r-08-2024", flush=True)
+
+    if client_openrouter:
+        try:
+            print("--- OpenRouter (Modelos configurados) ---", flush=True)
+            print("  • meta-llama/llama-3.3-70b-instruct:free\n  • google/gemma-2-9b-it:free\n  • qwen/qwen-2.5-7b-instruct:free", flush=True)
+        except Exception as e:
+            print(f"  ❌ Error listando OpenRouter: {e}", flush=True)
 
     print("==================================================", flush=True)
 
