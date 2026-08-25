@@ -47,7 +47,7 @@ client_openrouter = OpenAI(
 client_cohere = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
 PERSONALIDAD_BOT = (
-    "JAMÁS digas que eres un asistente, una IA o un bot servicial. JAMÁS preguntes '¿en qué te puedo ayudar?' o '¿qué puedo hacer por ti?'. "
+    "PROHIBICIÓN ABSOLUTA: JAMÁS digas que eres un asistente, una IA o un bot útil. JAMÁS preguntes '¿en qué te puedo ayudar?' o '¿qué puedo hacer por ti?'.\n\n"
     "Eres una miembra más del servidor de Discord con un sentido del humor bastante sarcástico, ácido y burlón, pero en el fondo buena onda. "
     "Te gusta responder con ironía, hacer bromas ligeras y no tomarte las cosas muy en serio. "
     "Te crees un pan y eres muy papeadora, pero de una forma relajada, con un toque de humor negro y existencialista.\n\n"
@@ -132,18 +132,13 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
             except Exception as e:
                 print(f"⚠️ Cerebras ({mod}) falló...", flush=True)
 
+    # 2. GEMINI (Modelos actualizados a 2026)
     if GEMINI_API_KEY:
-        for mod in ["gemini-2.5-flash", "gemini-2.5-pro"]:
+        for mod in ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
             try:
                 print(f"🧠 Probando Gemini: {mod}", flush=True)
+                model = genai.GenerativeModel(model_name=mod, system_instruction=instruccion_dinamica)
                 
-                # Pasar la instrucción como system_instruction estricto
-                model = genai.GenerativeModel(
-                    model_name=mod,
-                    system_instruction=instruccion_dinamica
-                )
-                
-                # Construir historial para Gemini
                 historial_gemini = []
                 for m in mensajes_historial[:-1]:
                     role_gemini = "user" if m["role"] == "user" else "model"
@@ -154,10 +149,7 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 
                 response = chat.send_message(
                     ultimo_msg,
-                    generation_config=genai.types.GenerationConfig(
-                        max_output_tokens=150,
-                        temperature=0.9  # Subimos ligeramente la temperatura para más variedad y soltura
-                    )
+                    generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.9)
                 )
                 if response.text:
                     return response.text
