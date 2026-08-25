@@ -7,7 +7,7 @@ def registrar_funciones(bot: commands.Bot, obtener_respuesta_ia_func=None):
     # Remueve el comando help nativo para permitir nuestro help personalizado
     bot.remove_command("help")
 
-    @bot.command(name="help", aliases=["ayuda"])
+    @bot.command(name="nbhelp", aliases=["nothinghelp", "nhelp"])
     async def ayuda(ctx):
         embed = discord.Embed(
             title="🤖 Manual para desmemoriados (Comandos del Bot)",
