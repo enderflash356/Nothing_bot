@@ -28,18 +28,18 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
+
 client_cerebras = Cerebras(api_key=CEREBRAS_API_KEY) if CEREBRAS_API_KEY else None
-
-
 client_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-genai.configure(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 client_openrouter = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY
@@ -75,6 +75,32 @@ PERSONALIDAD_BOT = (
 
 historial_usuarios = {}
 
+# FUNCIÓN PARA REVISAR LOS MODELOS DE IA DISPONIBLES EN CONSOLA
+def mostrar_modelos_disponibles():
+    print("==================================================", flush=True)
+    print("🔍 REVISANDO MODELOS DE IA DISPONIBLES EN TUS APIS...", flush=True)
+    
+    if GEMINI_API_KEY:
+        try:
+            print("--- Google Gemini ---", flush=True)
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    print(f"  • {m.name}", flush=True)
+        except Exception as e:
+            print(f"  ❌ Error listando Gemini: {e}", flush=True)
+
+    if client_groq:
+        try:
+            print("--- Groq ---", flush=True)
+            modelos_groq = client_groq.models.list().data
+            for m in modelos_groq[:5]: # Mostramos los primeros 5
+                print(f"  • {m.id}", flush=True)
+        except Exception as e:
+            print(f"  ❌ Error listando Groq: {e}", flush=True)
+
+    print("==================================================", flush=True)
+
+
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
 
     # INTENTO 0. CEREBRAS (Ultra rápido)
@@ -95,11 +121,11 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                     return res
             except Exception as e:
                 print(f"⚠️ Cerebras ({mod}) falló. Probando siguiente...", flush=True)
-    
+
+    # INTENTO 1. GROQ
     if client_groq:
         try:
             modelos_groq = [m.id for m in client_groq.models.list().data]
-           
             modelos_chat = [
                 m for m in modelos_groq 
                 if not any(x in m.lower() for x in [
@@ -109,8 +135,7 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
             ]
             
             modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
-            
-            print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
+            print(f"🧠 Usando Groq: {modelo_groq}", flush=True)
             payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
             response = client_groq.chat.completions.create(
                 model=modelo_groq,
@@ -126,9 +151,9 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
         except Exception as e:
             print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
 
-    
+    # INTENTO 2. GEMINI (Modelos actualizados 2026)
     if GEMINI_API_KEY:
-        modelos_gemini = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+        modelos_gemini = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
         for mod in modelos_gemini:
             try:
                 print(f"🧠 Probando Gemini: {mod}", flush=True)
@@ -136,22 +161,31 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                     model_name=mod,
                     system_instruction=instruccion_dinamica
                 )
-                prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-                response = model.generate_content(
-                    prompt_texto,
+                
+                # Convertir historial al formato oficial de Gemini (user / model)
+                historial_gemini = []
+                for m in mensajes_historial:
+                    role_gemini = "user" if m["role"] == "user" else "model"
+                    historial_gemini.append({"role": role_gemini, "parts": [m["content"]]})
+                
+                chat = model.start_chat(history=historial_gemini[:-1] if len(historial_gemini) > 1 else [])
+                ultimo_msg = historial_gemini[-1]["parts"][0] if historial_gemini else "hola"
+                
+                response = chat.send_message(
+                    ultimo_msg,
                     generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
                 )
                 if response.text:
                     return response.text
             except Exception as e:
-                print(f"⚠️ Gemini ({mod}) no disponible. Probando siguiente...", flush=True)
+                print(f"⚠️ Gemini ({mod}) falló. Probando siguiente...", flush=True)
 
-   
+    # INTENTO 3. COHERE
     if client_cohere:
         try:
-            print("🧠 Probando Cohere (Command-R)...", flush=True)
-            prompt_texto = f"{instruccion_dinamica}\n\nHistorial:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-           
+            print("🧠 Probando Cohere...", flush=True)
+            prompt_texto = f"{instruccion_dinamica}\n\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+            
             response = client_cohere.chat(
                 message=prompt_texto,
                 model="command-r-08-2024",
@@ -162,21 +196,19 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
         except Exception as e:
             print(f"⚠️ Cohere falló ({e}). Pasando a OpenRouter...", flush=True)
 
-    
-
-    
+    # INTENTO 4. OPENROUTER
     if client_openrouter:
         modelos_openrouter = [
-            "google/gemma-2-9b-it:free",
-            "qwen/qwen-2.5-7b-instruct:free",
             "meta-llama/llama-3.3-70b-instruct:free",
-            "openrouter/auto"
+            "google/gemma-2-9b-it:free",
+            "qwen/qwen-2.5-7b-instruct:free"
         ]
         import asyncio
         loop = asyncio.get_running_loop()
         
         for mod in modelos_openrouter:
             try:
+                print(f"🧠 Probando OpenRouter: {mod}", flush=True)
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
              
                 response = await loop.run_in_executor(
@@ -192,14 +224,14 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 if res:
                     return res
             except Exception as e:
-                print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente...", flush=True)
+                print(f"⚠️ OpenRouter ({mod}) falló...", flush=True)
 
-   
     return "ando mzt, me hablas al rato..."
 
 @bot.event
 async def on_ready():
     print(f'🤖 ¡Bot activo en Render como: {bot.user}!', flush=True)
+    mostrar_modelos_disponibles()
     try:
         synced = await bot.tree.sync()
         print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.", flush=True)
@@ -249,8 +281,8 @@ async def on_message(message: discord.Message):
             
             if message.guild:
                 lista_emojis = [f":{e.name}:" for e in message.guild.emojis if not e.animated]
-            if lista_emojis:
-                emojis_disponibles = f"\nEMOJIS DISPONIBLES DEL SERVIDOR: {', '.join(lista_emojis)}"
+                if lista_emojis:
+                    emojis_disponibles = f"\nEMOJIS DISPONIBLES DEL SERVIDOR: {', '.join(lista_emojis)}"
                 
                 lista_stickers = [s.name for s in message.guild.stickers]
                 if lista_stickers:
@@ -269,24 +301,23 @@ async def on_message(message: discord.Message):
             if user_id not in historial_usuarios:
                 historial_usuarios[user_id] = []
 
+            # Guardamos la intervención del usuario
             historial_usuarios[user_id].append({
                 "role": "user",
-                "content": f"[{nombre_usuario}]: {texto_limpio}"
+                "content": f"{nombre_usuario}: {texto_limpio}"
             })
 
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-
+            # Limpieza de etiquetas de razonamiento
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
             respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
 
             if not respuesta:
                 respuesta = "me dio flojera pensar, luego te respondo."
 
-            
             if message.guild:
                 for emoji in message.guild.emojis:
-                    
                     patron = f":{emoji.name}:"
                     if patron in respuesta:
                         formato_real = f"<:{emoji.name}:{emoji.id}>"
