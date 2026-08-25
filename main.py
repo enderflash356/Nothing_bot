@@ -225,9 +225,9 @@ async def on_message(message: discord.Message):
             stickers_disponibles = ""
             
             if message.guild:
-                lista_emojis = [f"<:{e.name}:{e.id}>" for e in message.guild.emojis if not e.animated]
-                if lista_emojis:
-                    emojis_disponibles = f"\nEMOJIS DEL SERVIDOR DISPONIBLES: {', '.join(lista_emojis)}"
+                lista_emojis = [f":{e.name}:" for e in message.guild.emojis if not e.animated]
+            if lista_emojis:
+                emojis_disponibles = f"\nEMOJIS DISPONIBLES DEL SERVIDOR: {', '.join(lista_emojis)}"
                 
                 lista_stickers = [s.name for s in message.guild.stickers]
                 if lista_stickers:
@@ -253,13 +253,21 @@ async def on_message(message: discord.Message):
 
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            
+
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
-            respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip() 
-            respuesta = re.sub(r'(<:[a-zA-Z0-9_]+:\d+)(?!>)', r'\1>', respuesta)
+            respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
 
             if not respuesta:
                 respuesta = "me dio flojera pensar, luego te respondo."
+
+            
+            if message.guild:
+                for emoji in message.guild.emojis:
+                    
+                    patron = f":{emoji.name}:"
+                    if patron in respuesta:
+                        formato_real = f"<:{emoji.name}:{emoji.id}>"
+                        respuesta = respuesta.replace(patron, formato_real)
 
             sticker_a_enviar = None
             if "[STICKER:" in respuesta:
