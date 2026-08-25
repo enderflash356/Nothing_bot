@@ -3,8 +3,52 @@ import discord
 from discord.ext import commands
 
 def registrar_funciones(bot: commands.Bot, obtener_respuesta_ia_func=None):
-    
-    
+
+    @bot.command(name="help", aliases=["ayuda"])
+    async def ayuda(ctx):
+        embed = discord.Embed(
+            title="🤖 Manual para desmemoriados (Comandos del Bot)",
+            description=(
+                "¿Otra vez se te olvidó qué hago? Te lo resumo rápido porque me da flojera explicar dos veces:\n"
+            ),
+            color=discord.Color.dark_purple()
+        )
+
+        embed.add_field(
+            name="💥 !papear @usuario",
+            value="Le suelta una humillación/papeada rápida y ácida al objetivo.",
+            inline=False
+        )
+
+        embed.add_field(
+            name="🚨 !funa @usuario",
+            value="Le inventa un expediente de chisme totalmente falso, ridículo y absurdo.",
+            inline=False
+        )
+
+        embed.add_field(
+            name="📝 !resumen",
+            value="Lee los últimos mensajes del chat y te resume de qué hablan (si es que dicen algo con sentido).",
+            inline=False
+        )
+
+        embed.add_field(
+            name="🖼️ /avatar [usuario]",
+            value="Muestra la foto de perfil en HD tuya o del usuario que menciones.",
+            inline=False
+        )
+
+        embed.add_field(
+            name="🧠 /olvidame",
+            value="Borra el historial de conversación que el bot recuerda sobre ti.",
+            inline=False
+        )
+
+        embed.set_footer(text="PD: Si me hablas directamente o me etiquetas, te respondo con IA. Tampoco me satures.")
+
+        await ctx.send(embed=embed)
+
+
     @bot.tree.command(name="avatar", description="Muestra el avatar de un usuario")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
     @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -85,3 +129,5 @@ def registrar_funciones(bot: commands.Bot, obtener_respuesta_ia_func=None):
 
 def evaluar_interrupcion_random():
     return random.random() < 0.1
+
+
