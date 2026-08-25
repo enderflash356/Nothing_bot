@@ -28,7 +28,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-registrar_funciones(bot)
+
 
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -248,6 +248,8 @@ async def on_message(message: discord.Message):
                 await message.reply(respuesta, mention_author=False)
 
     await bot.process_commands(message)
+
+registrar_funciones(bot, obtener_respuesta_ia)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
