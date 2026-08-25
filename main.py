@@ -8,6 +8,7 @@ import google.generativeai as genai
 from openai import OpenAI
 import cohere
 import re
+from cerebras.cloud.sdk import Cerebras
 
 from funciones_bot import registrar_funciones, evaluar_interrupcion_random
 
@@ -33,6 +34,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
+client_cerebras = Cerebras(api_key=CEREBRAS_API_KEY) if CEREBRAS_API_KEY else None
 
 
 client_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -73,7 +76,22 @@ PERSONALIDAD_BOT = (
 historial_usuarios = {}
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
-    
+
+    if client_cerebras:
+        try:
+            print("🧠 Probando Cerebras (Llama 3.3)...", flush=True)
+            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+            response = client_cerebras.chat.completions.create(
+                model="llama-3.3-70b",
+                messages=payload,
+                max_tokens=150,
+                temperature=0.7
+            )
+            res = response.choices[0].message.content
+            if res:
+                return res
+        except Exception as e:
+            print(f"⚠️ Cerebras falló ({e}). Pasando a Groq...", flush=True)
     
     if client_groq:
         try:
@@ -140,6 +158,8 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 return response.text
         except Exception as e:
             print(f"⚠️ Cohere falló ({e}). Pasando a OpenRouter...", flush=True)
+
+    
 
     
     if client_openrouter:

@@ -4,3 +4,4 @@ groq
 google-generativeai
 openai
 cohere
+cerebras_cloud_sdk
