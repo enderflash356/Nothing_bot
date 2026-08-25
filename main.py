@@ -27,14 +27,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Cargar Claves
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Inicializar Clientes
+
 client_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 genai.configure(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 client_openrouter = OpenAI(
@@ -74,14 +74,17 @@ historial_usuarios = {}
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     
-    # 1. INTENTO CON GROQ (Filtrando modelos de razonamiento <think>)
+    
     if client_groq:
         try:
             modelos_groq = [m.id for m in client_groq.models.list().data]
-            # Excluimos guardias, whisper Y MODELOS DE RAZONAMIENTO (deepseek, r1, reasoning)
+           
             modelos_chat = [
                 m for m in modelos_groq 
-                if not any(x in m.lower() for x in ["prompt-guard", "whisper", "guard", "deepseek", "r1", "reasoning"])
+                if not any(x in m.lower() for x in [
+                    "prompt-guard", "whisper", "guard", "deepseek", "r1", 
+                    "reasoning", "orpheus", "canopylabs", "vision", "audio", "tts"
+                ])
             ]
             
             modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
@@ -96,11 +99,13 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 frequency_penalty=0.6,
                 presence_penalty=0.4
             )
-            return response.choices[0].message.content
+            res = response.choices[0].message.content
+            if res:
+                return res
         except Exception as e:
             print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
 
-    # 2. INTENTO CON GEMINI
+    
     if GEMINI_API_KEY:
         modelos_gemini = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
         for mod in modelos_gemini:
@@ -115,45 +120,58 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                     prompt_texto,
                     generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
                 )
-                return response.text
+                if response.text:
+                    return response.text
             except Exception as e:
                 print(f"⚠️ Gemini ({mod}) no disponible. Probando siguiente...", flush=True)
 
-    # 3. INTENTO CON COHERE (Respaldo extra de alta estabilidad)
+   
     if client_cohere:
         try:
             print("🧠 Probando Cohere (Command-R)...", flush=True)
             prompt_texto = f"{instruccion_dinamica}\n\nHistorial:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+           
             response = client_cohere.chat(
                 message=prompt_texto,
-                model="command-r-plus",
+                model="command-r-08-2024",
                 temperature=0.7
             )
-            return response.text
+            if response.text:
+                return response.text
         except Exception as e:
             print(f"⚠️ Cohere falló ({e}). Pasando a OpenRouter...", flush=True)
 
-    # 4. INTENTO CON OPENROUTER
+    
     if client_openrouter:
         modelos_openrouter = [
             "google/gemma-2-9b-it:free",
             "qwen/qwen-2.5-7b-instruct:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
             "openrouter/auto"
         ]
+        import asyncio
+        loop = asyncio.get_running_loop()
+        
         for mod in modelos_openrouter:
             try:
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-                response = client_openrouter.chat.completions.create(
-                    model=mod,
-                    messages=payload,
-                    max_tokens=150,
-                    temperature=0.7
+             
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: client_openrouter.chat.completions.create(
+                        model=mod,
+                        messages=payload,
+                        max_tokens=150,
+                        temperature=0.7
+                    )
                 )
-                return response.choices[0].message.content
+                res = response.choices[0].message.content
+                if res:
+                    return res
             except Exception as e:
                 print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente...", flush=True)
 
-    # Si absolutamente todo falla
+   
     return "ando mzt, me hablas al rato..."
 
 @bot.event
@@ -235,9 +253,9 @@ async def on_message(message: discord.Message):
 
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            # Limpieza robusta de <think> y etiquetas sin cerrar
+            
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
-            respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip() # Por si quedó inconcluso
+            respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip() 
             respuesta = re.sub(r'(<:[a-zA-Z0-9_]+:\d+)(?!>)', r'\1>', respuesta)
 
             if not respuesta:
