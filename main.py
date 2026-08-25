@@ -6,8 +6,8 @@ from discord.ext import commands
 from groq import Groq
 import google.generativeai as genai
 from openai import OpenAI
+import cohere
 import re
-
 
 from funciones_bot import registrar_funciones, evaluar_interrupcion_random
 
@@ -27,21 +27,21 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
-
-
-
+# Cargar Claves
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-client_groq = Groq(api_key=GROQ_API_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
+# Inicializar Clientes
+client_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+genai.configure(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 client_openrouter = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY
-)
+) if OPENROUTER_API_KEY else None
+client_cohere = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
 PERSONALIDAD_BOT = (
     "Eres un miembro más del servidor de Discord con un sentido del humor bastante sarcástico, ácido y burlón, pero en el fondo buena onda. "
@@ -72,74 +72,88 @@ PERSONALIDAD_BOT = (
 
 historial_usuarios = {}
 
-
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     
-    # 1. INTENTO CON GROQ (Filtrando solo modelos de chat válidos)
-    try:
-        modelos_groq = [m.id for m in client_groq.models.list().data]
-        # Excluimos herramientas especiales (como prompt-guard o whisper)
-        modelos_chat = [
-            m for m in modelos_groq 
-            if not any(x in m for x in ["prompt-guard", "whisper", "guard"])
-        ]
-        
-        # Seleccionamos el primer modelo de chat disponible
-        modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
-        
-        print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
-        payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-        response = client_groq.chat.completions.create(
-            model=modelo_groq,
-            messages=payload,
-            max_tokens=150,
-            temperature=0.7,
-            frequency_penalty=0.6,
-            presence_penalty=0.4
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
-
-    # 2. INTENTO CON GEMINI (Probando modelos oficiales estándar)
-    # Usamos una lista de modelos vigentes en orden de preferencia
-    modelos_gemini = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
-    for mod in modelos_gemini:
+    # 1. INTENTO CON GROQ (Filtrando modelos de razonamiento <think>)
+    if client_groq:
         try:
-            print(f"🧠 Probando Gemini: {mod}", flush=True)
-            model = genai.GenerativeModel(
-                model_name=mod,
-                system_instruction=instruccion_dinamica
-            )
-            prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-            response = model.generate_content(
-                prompt_texto,
-                generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
-            )
-            return response.text
-        except Exception as e:
-            print(f"⚠️ Gemini ({mod}) no disponible. Probando siguiente...", flush=True)
-
-    # 3. INTENTO CON OPENROUTER (Filtra modelos gratis activos)
-    modelos_openrouter = [
-        "google/gemma-2-9b-it:free",
-        "qwen/qwen-2.5-7b-instruct:free",
-        "openrouter/auto"
-    ]
-    for mod in modelos_openrouter:
-        try:
+            modelos_groq = [m.id for m in client_groq.models.list().data]
+            # Excluimos guardias, whisper Y MODELOS DE RAZONAMIENTO (deepseek, r1, reasoning)
+            modelos_chat = [
+                m for m in modelos_groq 
+                if not any(x in m.lower() for x in ["prompt-guard", "whisper", "guard", "deepseek", "r1", "reasoning"])
+            ]
+            
+            modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
+            
+            print(f"🧠 Usando modelo Groq detectado: {modelo_groq}", flush=True)
             payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-            response = client_openrouter.chat.completions.create(
-                model=mod,
+            response = client_groq.chat.completions.create(
+                model=modelo_groq,
                 messages=payload,
                 max_tokens=150,
-                temperature=0.7
+                temperature=0.7,
+                frequency_penalty=0.6,
+                presence_penalty=0.4
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente...", flush=True)
+            print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
 
-    # Si todo falla
+    # 2. INTENTO CON GEMINI
+    if GEMINI_API_KEY:
+        modelos_gemini = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+        for mod in modelos_gemini:
+            try:
+                print(f"🧠 Probando Gemini: {mod}", flush=True)
+                model = genai.GenerativeModel(
+                    model_name=mod,
+                    system_instruction=instruccion_dinamica
+                )
+                prompt_texto = "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+                response = model.generate_content(
+                    prompt_texto,
+                    generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.7)
+                )
+                return response.text
+            except Exception as e:
+                print(f"⚠️ Gemini ({mod}) no disponible. Probando siguiente...", flush=True)
+
+    # 3. INTENTO CON COHERE (Respaldo extra de alta estabilidad)
+    if client_cohere:
+        try:
+            print("🧠 Probando Cohere (Command-R)...", flush=True)
+            prompt_texto = f"{instruccion_dinamica}\n\nHistorial:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
+            response = client_cohere.chat(
+                message=prompt_texto,
+                model="command-r-plus",
+                temperature=0.7
+            )
+            return response.text
+        except Exception as e:
+            print(f"⚠️ Cohere falló ({e}). Pasando a OpenRouter...", flush=True)
+
+    # 4. INTENTO CON OPENROUTER
+    if client_openrouter:
+        modelos_openrouter = [
+            "google/gemma-2-9b-it:free",
+            "qwen/qwen-2.5-7b-instruct:free",
+            "openrouter/auto"
+        ]
+        for mod in modelos_openrouter:
+            try:
+                payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+                response = client_openrouter.chat.completions.create(
+                    model=mod,
+                    messages=payload,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                print(f"⚠️ OpenRouter ({mod}) falló. Probando siguiente...", flush=True)
+
+    # Si absolutamente todo falla
     return "ando mzt, me hablas al rato..."
 
 @bot.event
@@ -219,13 +233,15 @@ async def on_message(message: discord.Message):
                 "content": f"[{nombre_usuario}]: {texto_limpio}"
             })
 
-            
-           
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            
-            respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL).strip()
+            # Limpieza robusta de <think> y etiquetas sin cerrar
+            respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
+            respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip() # Por si quedó inconcluso
             respuesta = re.sub(r'(<:[a-zA-Z0-9_]+:\d+)(?!>)', r'\1>', respuesta)
+
+            if not respuesta:
+                respuesta = "me dio flojera pensar, luego te respondo."
 
             sticker_a_enviar = None
             if "[STICKER:" in respuesta:
