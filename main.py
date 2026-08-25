@@ -261,10 +261,11 @@ async def on_message(message: discord.Message):
                 f"{PERSONALIDAD_BOT}\n"
                 f"{emojis_disponibles}\n"
                 f"{stickers_disponibles}\n"
-                "INSTRUCCIÓN DE EMOJIS/STICKERS:\n"
-                "- Si la respuesta lo amerita, elige un emoji que encaje con tu sarcasmo.\n"
-                "- Si sientes que la emoción es fuerte, pon al FINAL del mensaje: [STICKER:nombre_exacto].\n"
-                "- No uses emojis en todas las respuestas."
+                "REGLAS STRICTAS DE EMOJIS:\n"
+                "- JAMÁS intentes escribir emojis con IDs de Discord tipo <:nombre:123456>.\n"
+                "- Si quieres usar un emoji del servidor, escribe ÚNICAMENTE su nombre en formato :nombre_emoji:.\n"
+                "- Para cualquier otro emoji, usa emojis unicode normales de celular (😂, 💀, 🤨).\n"
+                "- Si la emoción es fuerte y deseas usar un sticker, pon al final: [STICKER:nombre_exacto]."
             )
 
             if user_id not in historial_usuarios:
@@ -282,7 +283,13 @@ async def on_message(message: discord.Message):
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
             respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
 
-            if not respuesta:
+            respuesta = re.sub(r'<a?:?\w*:\d+>', '', respuesta)
+            respuesta = re.sub(r'<:[<]+', '', respuesta)
+            respuesta = re.sub(r'>\d+>', '', respuesta)
+
+            respuesta = re.sub(r'^(user|assistant|assistant:|[a-zA-Z0-9_]+:)\s*', '', respuesta, flags=re.IGNORECASE)
+
+            if not respuesta.strip():
                 respuesta = "me dio flojera pensar, luego te respondo."
 
             if message.guild:
