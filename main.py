@@ -131,7 +131,7 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
             except Exception as e:
                 print(f"⚠️ Cerebras ({mod}) falló...", flush=True)
 
-    # 2. GEMINI (Basado en tus modelos reales detectados)
+    # 2. GEMINI
     if GEMINI_API_KEY:
         for mod in ["gemini-2.5-flash", "gemini-2.5-pro"]:
             try:
@@ -261,12 +261,11 @@ async def on_message(message: discord.Message):
                 f"{PERSONALIDAD_BOT}\n"
                 f"{emojis_disponibles}\n"
                 f"{stickers_disponibles}\n\n"
-                "REGLAS CRÍTICAS DE FORMATO (¡CUMPLE AL PIE DE LA LETRA!):\n"
-                "1. NUNCA escribas entre comillas ni encierres tu mensaje en \"...\". Habla directo.\n"
-                "2. JAMÁS menciones las palabras 'sticker' ni 'emoji' en tu texto (NADA de decir 'mándame un sticker' o 'emoji de conejo').\n"
-                "3. Para poner un emoji del servidor usa únicamente su código: :nombre_emoji:.\n"
-                "4. Para enviar un sticker del servidor pon al FINAL del mensaje: [STICKER:nombre_exacto].\n"
-                "5. Escribe CORTO, sarcástico y natural, como un usuario real en Discord."
+                "INSTRUCCIONES EXTRA:\n"
+                "1. Responde corto (1 sola oración), sarcástica y directa.\n"
+                "2. NO uses comillas al inicio o final de tu respuesta.\n"
+                "3. JAMÁS describas lo que haces ni hables de stickers o emojis.\n"
+                "4. Para usarlos: si es emoji del servidor escribe :nombre:, si es sticker pon [STICKER:nombre_exacto] al final."
             )
 
             if user_id not in historial_usuarios:
@@ -279,21 +278,16 @@ async def on_message(message: discord.Message):
 
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            # --- LIMPIEZA SUAVE (Sin matar stickers ni personalidad) ---
-            # 1. Quitar razonamiento interno de DeepSeek/R1
+            # --- LIMPIEZA DE FORMATEO ---
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
             respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
-
-            # 2. Solo remover la sintaxis ROTA de Discord (ej. <:<:troll... o corchetes dobles raros)
             respuesta = re.sub(r'<:\[+[^>]+>', '', respuesta)
-
-            # 3. Remover si la IA alucina prefijos "user:" o "assistant:" al inicio
             respuesta = re.sub(r'^(user:|assistant:|assistant\s*:\s*)', '', respuesta, flags=re.IGNORECASE).strip()
 
             if not respuesta:
                 respuesta = "me dio flojera pensar, luego te respondo."
 
-            # --- PROCESAR EMOJIS DEL SERVIDOR ---
+            # --- REEMPLAZO DE EMOJIS DE SERVIDOR ---
             if message.guild:
                 for emoji in message.guild.emojis:
                     patron = f":{emoji.name}:"
@@ -318,7 +312,7 @@ async def on_message(message: discord.Message):
                 "content": respuesta
             })
 
-            # --- ENVIAR MENSAJE Y/O STICKER ---
+            # --- ENVIAR RESPUESTA ---
             if sticker_a_enviar:
                 if respuesta:
                     await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
