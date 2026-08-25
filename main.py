@@ -117,66 +117,27 @@ def mostrar_modelos_disponibles():
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
 
-    # INTENTO 0. CEREBRAS (Ultra rápido)
+    # 1. CEREBRAS
     if client_cerebras:
-        modelos_cerebras = ["llama3.1-70b", "llama3.1-8b"]
-        for mod in modelos_cerebras:
+        for mod in ["llama3.1-70b", "llama3.1-8b"]:
             try:
                 print(f"🧠 Probando Cerebras ({mod})...", flush=True)
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
                 response = client_cerebras.chat.completions.create(
-                    model=mod,
-                    messages=payload,
-                    max_tokens=150,
-                    temperature=0.7
+                    model=mod, messages=payload, max_tokens=150, temperature=0.7
                 )
-                res = response.choices[0].message.content
-                if res:
-                    return res
+                if response.choices[0].message.content:
+                    return response.choices[0].message.content
             except Exception as e:
-                print(f"⚠️ Cerebras ({mod}) falló. Probando siguiente...", flush=True)
+                print(f"⚠️ Cerebras ({mod}) falló...", flush=True)
 
-    # INTENTO 1. GROQ
-    if client_groq:
-        try:
-            modelos_groq = [m.id for m in client_groq.models.list().data]
-            modelos_chat = [
-                m for m in modelos_groq 
-                if not any(x in m.lower() for x in [
-                    "prompt-guard", "whisper", "guard", "deepseek", "r1", 
-                    "reasoning", "orpheus", "canopylabs", "vision", "audio", "tts"
-                ])
-            ]
-            
-            modelo_groq = modelos_chat[0] if modelos_chat else "llama-3.3-70b-versatile"
-            print(f"🧠 Usando Groq: {modelo_groq}", flush=True)
-            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-            response = client_groq.chat.completions.create(
-                model=modelo_groq,
-                messages=payload,
-                max_tokens=150,
-                temperature=0.7,
-                frequency_penalty=0.6,
-                presence_penalty=0.4
-            )
-            res = response.choices[0].message.content
-            if res:
-                return res
-        except Exception as e:
-            print(f"⚠️ Groq falló ({e}). Pasando a Gemini...", flush=True)
-
-    # INTENTO 2. GEMINI (Modelos actualizados 2026)
+    # 2. GEMINI (Basado en tus modelos reales detectados)
     if GEMINI_API_KEY:
-        modelos_gemini = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-        for mod in modelos_gemini:
+        for mod in ["gemini-2.5-flash", "gemini-2.5-pro"]:
             try:
                 print(f"🧠 Probando Gemini: {mod}", flush=True)
-                model = genai.GenerativeModel(
-                    model_name=mod,
-                    system_instruction=instruccion_dinamica
-                )
+                model = genai.GenerativeModel(model_name=mod, system_instruction=instruccion_dinamica)
                 
-                # Convertir historial al formato oficial de Gemini (user / model)
                 historial_gemini = []
                 for m in mensajes_historial:
                     role_gemini = "user" if m["role"] == "user" else "model"
@@ -192,51 +153,45 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 if response.text:
                     return response.text
             except Exception as e:
-                print(f"⚠️ Gemini ({mod}) falló. Probando siguiente...", flush=True)
+                print(f"⚠️ Gemini ({mod}) falló: {e}", flush=True)
 
-    # INTENTO 3. COHERE
+    # 3. GROQ
+    if client_groq:
+        try:
+            print("🧠 Probando Groq (allam-2-7b)...", flush=True)
+            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+            response = client_groq.chat.completions.create(
+                model="allam-2-7b", messages=payload, max_tokens=150, temperature=0.7
+            )
+            if response.choices[0].message.content:
+                return response.choices[0].message.content
+        except Exception as e:
+            print(f"⚠️ Groq falló: {e}", flush=True)
+
+    # 4. COHERE
     if client_cohere:
         try:
             print("🧠 Probando Cohere...", flush=True)
             prompt_texto = f"{instruccion_dinamica}\n\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-            
-            response = client_cohere.chat(
-                message=prompt_texto,
-                model="command-r-08-2024",
-                temperature=0.7
-            )
+            response = client_cohere.chat(message=prompt_texto, model="command-r-08-2024", temperature=0.7)
             if response.text:
                 return response.text
         except Exception as e:
-            print(f"⚠️ Cohere falló ({e}). Pasando a OpenRouter...", flush=True)
+            print(f"⚠️ Cohere falló...", flush=True)
 
-    # INTENTO 4. OPENROUTER
+    # 5. OPENROUTER
     if client_openrouter:
-        modelos_openrouter = [
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "google/gemma-2-9b-it:free",
-            "qwen/qwen-2.5-7b-instruct:free"
-        ]
         import asyncio
         loop = asyncio.get_running_loop()
-        
-        for mod in modelos_openrouter:
+        for mod in ["meta-llama/llama-3.3-70b-instruct:free", "google/gemma-2-9b-it:free"]:
             try:
                 print(f"🧠 Probando OpenRouter: {mod}", flush=True)
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-             
                 response = await loop.run_in_executor(
-                    None,
-                    lambda: client_openrouter.chat.completions.create(
-                        model=mod,
-                        messages=payload,
-                        max_tokens=150,
-                        temperature=0.7
-                    )
+                    None, lambda: client_openrouter.chat.completions.create(model=mod, messages=payload, max_tokens=150, temperature=0.7)
                 )
-                res = response.choices[0].message.content
-                if res:
-                    return res
+                if response.choices[0].message.content:
+                    return response.choices[0].message.content
             except Exception as e:
                 print(f"⚠️ OpenRouter ({mod}) falló...", flush=True)
 
