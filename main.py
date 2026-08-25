@@ -77,21 +77,24 @@ historial_usuarios = {}
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
 
+    # INTENTO 0. CEREBRAS (Ultra rápido)
     if client_cerebras:
-        try:
-            print("🧠 Probando Cerebras (Llama 3.3)...", flush=True)
-            payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
-            response = client_cerebras.chat.completions.create(
-                model="llama-3.3-70b",
-                messages=payload,
-                max_tokens=150,
-                temperature=0.7
-            )
-            res = response.choices[0].message.content
-            if res:
-                return res
-        except Exception as e:
-            print(f"⚠️ Cerebras falló ({e}). Pasando a Groq...", flush=True)
+        modelos_cerebras = ["llama3.1-70b", "llama3.1-8b"]
+        for mod in modelos_cerebras:
+            try:
+                print(f"🧠 Probando Cerebras ({mod})...", flush=True)
+                payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
+                response = client_cerebras.chat.completions.create(
+                    model=mod,
+                    messages=payload,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                res = response.choices[0].message.content
+                if res:
+                    return res
+            except Exception as e:
+                print(f"⚠️ Cerebras ({mod}) falló. Probando siguiente...", flush=True)
     
     if client_groq:
         try:
