@@ -251,27 +251,25 @@ async def on_message(message: discord.Message):
             if message.guild:
                 lista_emojis = [f":{e.name}:" for e in message.guild.emojis if not e.animated]
                 if lista_emojis:
-                    emojis_disponibles = f"\nEMOJIS DISPONIBLES DEL SERVIDOR: {', '.join(lista_emojis)}"
+                    emojis_disponibles = f"\nEMOJIS DEL SERVIDOR DISPONIBLES: {', '.join(lista_emojis)}"
                 
                 lista_stickers = [s.name for s in message.guild.stickers]
                 if lista_stickers:
-                    stickers_disponibles = f"\nSTICKERS DISPONIBLES: {', '.join(lista_stickers)}"
+                    stickers_disponibles = f"\nSTICKERS DEL SERVIDOR DISPONIBLES: {', '.join(lista_stickers)}"
 
             instruccion_dinamica = (
                 f"{PERSONALIDAD_BOT}\n"
                 f"{emojis_disponibles}\n"
-                f"{stickers_disponibles}\n"
-                "REGLAS STRICTAS DE EMOJIS:\n"
-                "- JAMÁS intentes escribir emojis con IDs de Discord tipo <:nombre:123456>.\n"
-                "- Si quieres usar un emoji del servidor, escribe ÚNICAMENTE su nombre en formato :nombre_emoji:.\n"
-                "- Para cualquier otro emoji, usa emojis unicode normales de celular (😂, 💀, 🤨).\n"
-                "- Si la emoción es fuerte y deseas usar un sticker, pon al final: [STICKER:nombre_exacto]."
+                f"{stickers_disponibles}\n\n"
+                "USO DE EMOJIS Y STICKERS:\n"
+                "- Usa libremente los emojis del servidor escribiendo su nombre exacto como :nombre: (ejemplo :troll: o :pepe:).\n"
+                "- Si quieres enviar un sticker del servidor, pon al FINAL de tu mensaje: [STICKER:nombre_exacto].\n"
+                "- Exprésate con soltura, sarcasmo y tu humor negro habitual."
             )
 
             if user_id not in historial_usuarios:
                 historial_usuarios[user_id] = []
 
-            # Guardamos la intervención del usuario
             historial_usuarios[user_id].append({
                 "role": "user",
                 "content": f"{nombre_usuario}: {texto_limpio}"
@@ -279,19 +277,21 @@ async def on_message(message: discord.Message):
 
             respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
 
-            # Limpieza de etiquetas de razonamiento
+            # --- LIMPIEZA SUAVE (Sin matar stickers ni personalidad) ---
+            # 1. Quitar razonamiento interno de DeepSeek/R1
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
             respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
 
-            respuesta = re.sub(r'<a?:?\w*:\d+>', '', respuesta)
-            respuesta = re.sub(r'<:[<]+', '', respuesta)
-            respuesta = re.sub(r'>\d+>', '', respuesta)
+            # 2. Solo remover la sintaxis ROTA de Discord (ej. <:<:troll... o corchetes dobles raros)
+            respuesta = re.sub(r'<:\[+[^>]+>', '', respuesta)
 
-            respuesta = re.sub(r'^(user|assistant|assistant:|[a-zA-Z0-9_]+:)\s*', '', respuesta, flags=re.IGNORECASE)
+            # 3. Remover si la IA alucina prefijos "user:" o "assistant:" al inicio
+            respuesta = re.sub(r'^(user:|assistant:|assistant\s*:\s*)', '', respuesta, flags=re.IGNORECASE).strip()
 
-            if not respuesta.strip():
+            if not respuesta:
                 respuesta = "me dio flojera pensar, luego te respondo."
 
+            # --- PROCESAR EMOJIS DEL SERVIDOR ---
             if message.guild:
                 for emoji in message.guild.emojis:
                     patron = f":{emoji.name}:"
@@ -299,23 +299,29 @@ async def on_message(message: discord.Message):
                         formato_real = f"<:{emoji.name}:{emoji.id}>"
                         respuesta = respuesta.replace(patron, formato_real)
 
+            # --- PROCESAR STICKERS ---
             sticker_a_enviar = None
             if "[STICKER:" in respuesta:
                 inicio = respuesta.find("[STICKER:") + 9
                 fin = respuesta.find("]", inicio)
-                nombre_sticker = respuesta[inicio:fin]
-                respuesta = respuesta.replace(f"[STICKER:{nombre_sticker}]", "").strip()
-                
-                if message.guild:
-                    sticker_a_enviar = discord.utils.get(message.guild.stickers, name=nombre_sticker)
+                if fin != -1:
+                    nombre_sticker = respuesta[inicio:fin].strip()
+                    respuesta = respuesta.replace(f"[STICKER:{nombre_sticker}]", "").strip()
+                    
+                    if message.guild:
+                        sticker_a_enviar = discord.utils.get(message.guild.stickers, name=nombre_sticker)
 
             historial_usuarios[user_id].append({
                 "role": "assistant",
                 "content": respuesta
             })
 
+            # --- ENVIAR MENSAJE Y/O STICKER ---
             if sticker_a_enviar:
-                await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
+                if respuesta:
+                    await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
+                else:
+                    await message.reply(stickers=[sticker_a_enviar], mention_author=False)
             else:
                 await message.reply(respuesta, mention_author=False)
 
