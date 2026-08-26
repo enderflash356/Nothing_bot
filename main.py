@@ -1,5 +1,7 @@
 import os
 import threading
+import random
+import re
 from flask import Flask
 import discord
 from discord.ext import commands
@@ -7,7 +9,6 @@ from groq import Groq
 import google.generativeai as genai
 from openai import OpenAI
 import cohere
-import re
 from cerebras.cloud.sdk import Cerebras
 
 from funciones_bot import registrar_funciones, evaluar_interrupcion_random
@@ -26,6 +27,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -47,10 +49,12 @@ client_openrouter = OpenAI(
 client_cohere = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
 PERSONALIDAD_BOT = (
+    "REGLA DE IDIOMA ABSOLUTA: Responde SIEMPRE y EXCLUSIVAMENTE en español. JAMÁS hables en inglés ni traduzcas el prompt.\n"
     "PROHIBICIÓN ABSOLUTA: JAMÁS digas que eres un asistente, una IA o un bot útil. JAMÁS preguntes '¿en qué te puedo ayudar?' o '¿qué puedo hacer por ti?'.\n\n"
     "Eres una miembra más del servidor de Discord con un sentido del humor bastante sarcástico, ácido y burlón, pero en el fondo buena onda. "
+    "Habla siempre en género femenino (aburrida, cansada, lista, etc.). "
     "Te gusta responder con ironía, hacer bromas ligeras y no tomarte las cosas muy en serio. "
-    "Te crees un pan y eres muy papeadora, pero de una forma relajada, con un toque de humor negro y existencialista.\n\n"
+    "Te crees un pan y eres muy papeadora, pero de una forma relaxed, con un toque de humor negro y existencialista.\n\n"
     "REGLAS OBLIGATORIAS:\n"
     "1. Tus respuestas deben ser CORTAS y directas (máximo 1 a 2 oraciones), como un mensaje de WhatsApp o Discord real.\n"
     "2. NUNCA uses formato robótico de IA, listas con viñetas, explicaciones largas ni seas servicial. JAMÁS digas frases de robot como 'silencio activado' o 'procesando'.\n"
@@ -79,7 +83,6 @@ historial_usuarios = {}
 def mostrar_modelos_disponibles():
     print("==================================================", flush=True)
     print("🔍 REVISANDO MODELOS DE IA DISPONIBLES EN TUS APIS...", flush=True)
-    
     if GEMINI_API_KEY:
         try:
             print("--- Google Gemini ---", flush=True)
@@ -109,7 +112,7 @@ def mostrar_modelos_disponibles():
     if client_openrouter:
         try:
             print("--- OpenRouter (Modelos configurados) ---", flush=True)
-            print("  • meta-llama/llama-3.3-70b-instruct:free\n  • google/gemma-2-9b-it:free\n  • qwen/qwen-2.5-7b-instruct:free", flush=True)
+            print("  • meta-llama/llama-3.3-70b-instruct:free\n  • google/gemma-2-9b-it:free", flush=True)
         except Exception as e:
             print(f"  ❌ Error listando OpenRouter: {e}", flush=True)
 
@@ -117,7 +120,6 @@ def mostrar_modelos_disponibles():
 
 
 async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
-
     # 1. CEREBRAS
     if client_cerebras:
         for mod in ["llama3.1-70b", "llama3.1-8b"]:
@@ -125,14 +127,14 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 print(f"🧠 Probando Cerebras ({mod})...", flush=True)
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
                 response = client_cerebras.chat.completions.create(
-                    model=mod, messages=payload, max_tokens=150, temperature=0.7
+                    model=mod, messages=payload, max_tokens=300, temperature=0.8
                 )
                 if response.choices[0].message.content:
                     return response.choices[0].message.content
-            except Exception as e:
+            except Exception:
                 print(f"⚠️ Cerebras ({mod}) falló...", flush=True)
 
-    # 2. GEMINI (Modelos actualizados a 2026)
+    # 2. GEMINI (Modelos actualizados)
     if GEMINI_API_KEY:
         for mod in ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
             try:
@@ -149,7 +151,7 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 
                 response = chat.send_message(
                     ultimo_msg,
-                    generation_config=genai.types.GenerationConfig(max_output_tokens=150, temperature=0.9)
+                    generation_config=genai.types.GenerationConfig(max_output_tokens=300, temperature=0.8)
                 )
                 if response.text:
                     return response.text
@@ -159,10 +161,10 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
     # 3. GROQ
     if client_groq:
         try:
-            print("🧠 Probando Groq (allam-2-7b)...", flush=True)
+            print("🧠 Probando Groq...", flush=True)
             payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
             response = client_groq.chat.completions.create(
-                model="allam-2-7b", messages=payload, max_tokens=150, temperature=0.7
+                model="llama-3.3-70b-versatile", messages=payload, max_tokens=300, temperature=0.8
             )
             if response.choices[0].message.content:
                 return response.choices[0].message.content
@@ -174,10 +176,10 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
         try:
             print("🧠 Probando Cohere...", flush=True)
             prompt_texto = f"{instruccion_dinamica}\n\n" + "\n".join([f"{m['role']}: {m['content']}" for m in mensajes_historial])
-            response = client_cohere.chat(message=prompt_texto, model="command-r-08-2024", temperature=0.7)
+            response = client_cohere.chat(message=prompt_texto, model="command-r-08-2024", temperature=0.8)
             if response.text:
                 return response.text
-        except Exception as e:
+        except Exception:
             print(f"⚠️ Cohere falló...", flush=True)
 
     # 5. OPENROUTER
@@ -189,11 +191,11 @@ async def obtener_respuesta_ia(mensajes_historial, instruccion_dinamica):
                 print(f"🧠 Probando OpenRouter: {mod}", flush=True)
                 payload = [{"role": "system", "content": instruccion_dinamica}] + mensajes_historial
                 response = await loop.run_in_executor(
-                    None, lambda: client_openrouter.chat.completions.create(model=mod, messages=payload, max_tokens=150, temperature=0.7)
+                    None, lambda: client_openrouter.chat.completions.create(model=mod, messages=payload, max_tokens=300, temperature=0.8)
                 )
                 if response.choices[0].message.content:
                     return response.choices[0].message.content
-            except Exception as e:
+            except Exception:
                 print(f"⚠️ OpenRouter ({mod}) falló...", flush=True)
 
     return "ando mzt, me hablas al rato..."
@@ -204,7 +206,7 @@ async def on_ready():
     mostrar_modelos_disponibles()
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Se sincronizaron {len(synced)} comandos Slash de forma GLOBAL.", flush=True)
+        print(f"✅ Se sincronizaron {len(synced)} comandos Slash.", flush=True)
     except Exception as e:
         print(f"❌ Error en sincronización: {e}", flush=True)
 
@@ -223,6 +225,19 @@ async def olvidame(interaction: discord.Interaction):
 async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
+
+    # --- REACCIONES ESPONTÁNEAS CON EMOJIS (20% de probabilidad) ---
+    if message.guild and random.random() < 0.20:
+        try:
+            emojis_para_reaccionar = list(message.guild.emojis)
+            if emojis_para_reaccionar:
+                emoji_elegido = random.choice(emojis_para_reaccionar)
+                await message.add_reaction(emoji_elegido)
+            else:
+                emojis_estandar = ["🙄", "🗿", "💀", "🤡", "😴", "👍"]
+                await message.add_reaction(random.choice(emojis_estandar))
+        except Exception:
+            pass
 
     mencionado = bot.user in message.mentions
     
@@ -263,7 +278,8 @@ async def on_message(message: discord.Message):
                 f"{emojis_disponibles}\n"
                 f"{stickers_disponibles}\n\n"
                 "INSTRUCCIONES EXTRA:\n"
-                "1. Responde corto (1 sola oración), sarcástica y directa.\n"
+                "- Responde en ESPAÑOL con una o dos oraciones COMPLETAS.\n"
+                "1. Responde corto (1 o 2 oraciones), sarcástica y directa.\n"
                 "2. NO uses comillas al inicio o final de tu respuesta.\n"
                 "3. JAMÁS describas lo que haces ni hables de stickers o emojis.\n"
                 "4. Para usarlos: si es emoji del servidor escribe :nombre:, si es sticker pon [STICKER:nombre_exacto] al final."
@@ -277,9 +293,13 @@ async def on_message(message: discord.Message):
                 "content": f"{nombre_usuario}: {texto_limpio}"
             })
 
-            respuesta = await obtener_respuesta_ia(historial_usuarios[user_id][-5:], instruccion_dinamica)
+            # MANTENER HISTORIAL COMPACTO (MÁXIMO 6 MENSAJES GUARDADOS)
+            if len(historial_usuarios[user_id]) > 6:
+                historial_usuarios[user_id] = historial_usuarios[user_id][-6:]
 
-            # --- LIMPIEZA DE FORMATEO ---
+            respuesta = await obtener_respuesta_ia(historial_usuarios[user_id], instruccion_dinamica)
+
+            # LIMPIEZA DE FORMATEO
             respuesta = re.sub(r'<think>.*?</think>', '', respuesta, flags=re.DOTALL)
             respuesta = re.sub(r'<think>.*', '', respuesta, flags=re.DOTALL).strip()
             respuesta = re.sub(r'<:\[+[^>]+>', '', respuesta)
@@ -288,7 +308,7 @@ async def on_message(message: discord.Message):
             if not respuesta:
                 respuesta = "me dio flojera pensar, luego te respondo."
 
-            # --- REEMPLAZO DE EMOJIS DE SERVIDOR ---
+            # REEMPLAZO DE EMOJIS DE SERVIDOR
             if message.guild:
                 for emoji in message.guild.emojis:
                     patron = f":{emoji.name}:"
@@ -296,7 +316,7 @@ async def on_message(message: discord.Message):
                         formato_real = f"<:{emoji.name}:{emoji.id}>"
                         respuesta = respuesta.replace(patron, formato_real)
 
-            # --- PROCESAR STICKERS ---
+            # PROCESAR STICKERS
             sticker_a_enviar = None
             if "[STICKER:" in respuesta:
                 inicio = respuesta.find("[STICKER:") + 9
@@ -313,7 +333,7 @@ async def on_message(message: discord.Message):
                 "content": respuesta
             })
 
-            # --- ENVIAR RESPUESTA ---
+            # ENVIAR RESPUESTA
             if sticker_a_enviar:
                 if respuesta:
                     await message.reply(respuesta, stickers=[sticker_a_enviar], mention_author=False)
